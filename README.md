@@ -6,7 +6,7 @@ A software rasterizer developed in "Mitsuba Rei's CG Tech Channel".
 
 ### Episodes
 
-- TBA
+- https://youtu.be/gQx4PyKpQh0
 
 ### License
 
