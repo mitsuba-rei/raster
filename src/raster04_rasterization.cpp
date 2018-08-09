@@ -296,7 +296,7 @@ int main(int argc, char* argv[]) {
         fb.clear(w, h);
 
         // Transformation matrix
-        const auto modelM = animate ? glm::rotate(ImGui::GetTime(), glm::vec3(0,1,0)) : glm::mat4(1.f);
+        const auto modelM = animate ? glm::rotate(float(ImGui::GetTime()), glm::vec3(0.f,1.f,0.f)) : glm::mat4(1.f);
         const auto projM = glm::perspective(glm::radians(fov), float(fb.w) / fb.h, znear, zfar);
         const auto transMVP = projM * viewM * modelM;
         const auto transN = glm::mat3(glm::transpose(glm::inverse(modelM)));
