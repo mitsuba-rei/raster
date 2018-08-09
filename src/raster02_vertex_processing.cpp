@@ -42,7 +42,7 @@ int main(int argc, char* argv[]) {
         fb.clear(w, h);
 
         // Transformation matrix
-        const auto modelM = glm::rotate(ImGui::GetTime(), glm::vec3(0, 1, 0));
+        const auto modelM = glm::rotate(float(ImGui::GetTime()), glm::vec3(0.f, 1.f, 0.f));
         const auto projM = glm::perspective(glm::radians(30.f), float(fb.w) / fb.h, 0.1f, 10.f);
         const auto transMVP = projM * viewM * modelM;
 

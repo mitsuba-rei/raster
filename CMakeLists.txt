@@ -1,4 +1,3 @@
-# cmake -G "Visual Studio 15 2017 Win64" ..
 cmake_minimum_required(VERSION 3.11)
 project(raster)
 
