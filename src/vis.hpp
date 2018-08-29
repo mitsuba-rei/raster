@@ -92,7 +92,7 @@ public:
     bool init() {
         #pragma region Programs
         const char* vscode = R"x(
-            #version 430 core
+            #version 410 core
             layout (location = 0) in vec2 position;
             out gl_PerVertex {
                 vec4 gl_Position;
@@ -104,8 +104,8 @@ public:
             }
         )x";
         const char* fscode = R"x(
-            #version 430 core
-            layout (binding = 0) uniform sampler2D tex;
+            #version 410 core
+            uniform sampler2D tex;
             in vec2 uv;
             out vec4 color;
             void main() {
@@ -278,8 +278,9 @@ public:
         window_ = [&]() -> GLFWwindow* {
             // GLFW window
             glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
-            glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+            glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 1);
             glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+            glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
             #ifdef _DEBUG
             glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, GLFW_TRUE);
             #endif
@@ -292,7 +293,7 @@ public:
             IMGUI_CHECKVERSION();
             ImGui::CreateContext();
             ImGui_ImplGlfw_InitForOpenGL(window, true);
-            ImGui_ImplOpenGL3_Init();
+            ImGui_ImplOpenGL3_Init("#version 410");
             ImGui::StyleColorsDark();
             return window;
         }();
