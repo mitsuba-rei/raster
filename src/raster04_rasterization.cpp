@@ -122,6 +122,10 @@ void rasterize(
         merge(p3);
         min = glm::max(min, glm::vec2(0));
         max = glm::min(max, glm::vec2(fb.w-1, fb.h-1));
+        // alignment
+        static const int ALIGN = 8;
+        int minX = int(min.x) & ~(ALIGN - 1);
+        int maxX = (int(max.x) + 1 + (ALIGN - 1)) & ~(ALIGN - 1);
 
         // Edge function (CCW)
         const auto edgeFunc = [](const glm::vec2& a, const glm::vec2& b, const glm::vec2& c) {
@@ -137,6 +141,7 @@ void rasterize(
             return;
         }
         for (int y = int(min.y); y <= int(max.y); y++) {
+            #if 0
             for (int x = int(min.x); x <= int(max.x); x++) {
                 const auto p = glm::vec2(x, y) + 0.5f;
                 auto b1 = edgeFunc(p2, p3, p);
@@ -157,6 +162,50 @@ void rasterize(
                 const auto n = glm::normalize(b1/v1.p.w*v1.n + b2/v2.p.w*v2.n + b3/v3.p.w*v3.n);
                 fb.setPixel(x, y, fragmentShader(back ? -n : n, p_ndc));
             }
+            #else
+            const auto p_y = y + 0.5f;
+
+            const auto d1_1_x = p3.x - p2.x;
+            const auto d1_1_y = p3.y - p2.y;
+            const auto d1_2_y = p_y - p2.y;
+            const auto a1_1 = d1_1_x*d1_2_y + d1_1_y*p2.x;
+
+            const auto d2_1_x = p1.x - p3.x;
+            const auto d2_1_y = p1.y - p3.y;
+            const auto d2_2_y = p_y - p3.y;
+            const auto a2_1 = d2_1_x*d2_2_y + d2_1_y*p3.x;
+
+            const auto d3_1_x = p2.x - p1.x;
+            const auto d3_1_y = p2.y - p1.y;
+            const auto d3_2_y = p_y - p1.y;
+            const auto a3_1 = d3_1_x*d3_2_y + d3_1_y*p1.x;
+
+            for (int x = minX; x < maxX; x++) {
+                const auto p_x = x + 0.5f;
+                auto b1 = -d1_1_y*p_x + a1_1;
+                auto b2 = -d2_1_y*p_x + a2_1;
+                auto b3 = -d3_1_y*p_x + a3_1;
+                const bool inside = (b1>0 && b2>0 && b3>0) || (b1<0 && b2<0 && b3<0);
+                if (!inside) {
+                    continue;
+                }
+
+                b1 /= denom;
+                b2 /= denom;
+                b3 /= denom;
+                const auto p_ndc_z = b1 * p1_ndc.z + b2 * p2_ndc.z + b3 * p3_ndc.z;
+                if (fb.zbuf[y*fb.w + x] < p_ndc_z) {
+                    continue;
+                } else {
+                    fb.zbuf[y*fb.w + x] = p_ndc_z;
+                }
+
+                const auto n = b1/v1.p.w * v1.n + b2/v2.p.w * v2.n + b3/v3.p.w * v3.n;
+
+                const auto c = glm::normalize(n);
+                fb.setPixel(x, y, c);
+            }
+            #endif
         }
     };
 
