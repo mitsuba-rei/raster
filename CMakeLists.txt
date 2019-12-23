@@ -49,6 +49,14 @@ target_compile_options(libraster PUBLIC "$<$<CXX_COMPILER_ID:MSVC>:/EHsc>")
 
 # --------------------------------------------------------------------------------
 
+if (NOT MSVC)
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mavx2 -mfma")
+else(NOT MSVC)
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /arch:AVX2")
+endif(NOT MSVC)
+
+# --------------------------------------------------------------------------------
+
 add_executable(raster01_window "${CMAKE_SOURCE_DIR}/src/raster01_window.cpp")
 target_link_libraries(raster01_window PRIVATE libraster)
 add_executable(raster02_vertex_processing "${CMAKE_SOURCE_DIR}/src/raster02_vertex_processing.cpp")

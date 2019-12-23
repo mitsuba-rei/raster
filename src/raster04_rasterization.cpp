@@ -44,6 +44,19 @@ struct VaryingVert {
 using VertexShaderFunc = std::function<VaryingVert(const Scene::Vert& v)>;
 using FragmentShaderFunc = std::function<glm::vec3(const glm::vec3& n, const glm::vec3& p_ndc)>;
 
+#pragma GCC target("avx2")
+#pragma clang attribute push (__attribute__((target("avx2, fma"))), apply_to=function)
+#include <x86intrin.h>
+void rasterize(
+    const Scene& scene,
+    Framebuffer& fb,
+    bool wireframe,
+    bool cullbackface,
+    const VertexShaderFunc& vertexShader,
+    const FragmentShaderFunc& fragmentShader
+);
+#pragma clang attribute pop
+
 void rasterize(
     const Scene& scene,
     Framebuffer& fb,
@@ -140,8 +153,8 @@ void rasterize(
         if (back && cullbackface) {
             return;
         }
+        #if 0
         for (int y = int(min.y); y <= int(max.y); y++) {
-            #if 0
             for (int x = int(min.x); x <= int(max.x); x++) {
                 const auto p = glm::vec2(x, y) + 0.5f;
                 auto b1 = edgeFunc(p2, p3, p);
@@ -162,51 +175,327 @@ void rasterize(
                 const auto n = glm::normalize(b1/v1.p.w*v1.n + b2/v2.p.w*v2.n + b3/v3.p.w*v3.n);
                 fb.setPixel(x, y, fragmentShader(back ? -n : n, p_ndc));
             }
-            #else
+        }
+        #else
+        static const __m256 zero = _mm256_set1_ps(0.0f);
+        static const __m256 _255 = _mm256_set1_ps(255.0f);
+        const __m256 p1_ndc_z = _mm256_set1_ps(p1_ndc.z);
+        const __m256 p2_ndc_z = _mm256_set1_ps(p2_ndc.z);
+        const __m256 p3_ndc_z = _mm256_set1_ps(p3_ndc.z);
+        const __m256 denominv = _mm256_set1_ps(1.0f/denom);
+        const __m256 v1_n_x = _mm256_set1_ps(v1.n.x / v1.p.w);
+        const __m256 v1_n_y = _mm256_set1_ps(v1.n.y / v1.p.w);
+        const __m256 v1_n_z = _mm256_set1_ps(v1.n.z / v1.p.w);
+        const __m256 v2_n_x = _mm256_set1_ps(v2.n.x / v2.p.w);
+        const __m256 v2_n_y = _mm256_set1_ps(v2.n.y / v2.p.w);
+        const __m256 v2_n_z = _mm256_set1_ps(v2.n.z / v2.p.w);
+        const __m256 v3_n_x = _mm256_set1_ps(v3.n.x / v3.p.w);
+        const __m256 v3_n_y = _mm256_set1_ps(v3.n.y / v3.p.w);
+        const __m256 v3_n_z = _mm256_set1_ps(v3.n.z / v3.p.w);
+
+        const auto d1_1_x = p3.x - p2.x;
+        const auto d1_1_y = p3.y - p2.y;
+
+        const auto d2_1_x = p1.x - p3.x;
+        const auto d2_1_y = p1.y - p3.y;
+
+        const auto d3_1_x = p2.x - p1.x;
+        const auto d3_1_y = p2.y - p1.y;
+
+        const __m256 d1 = _mm256_set1_ps(-d1_1_y);
+        const __m256 d2 = _mm256_set1_ps(-d2_1_y);
+        const __m256 d3 = _mm256_set1_ps(-d3_1_y);
+
+        for (int y = int(min.y); y <= int(max.y); y++) {
             const auto p_y = y + 0.5f;
 
-            const auto d1_1_x = p3.x - p2.x;
-            const auto d1_1_y = p3.y - p2.y;
             const auto d1_2_y = p_y - p2.y;
             const auto a1_1 = d1_1_x*d1_2_y + d1_1_y*p2.x;
 
-            const auto d2_1_x = p1.x - p3.x;
-            const auto d2_1_y = p1.y - p3.y;
             const auto d2_2_y = p_y - p3.y;
             const auto a2_1 = d2_1_x*d2_2_y + d2_1_y*p3.x;
 
-            const auto d3_1_x = p2.x - p1.x;
-            const auto d3_1_y = p2.y - p1.y;
             const auto d3_2_y = p_y - p1.y;
             const auto a3_1 = d3_1_x*d3_2_y + d3_1_y*p1.x;
 
-            for (int x = minX; x < maxX; x++) {
-                const auto p_x = x + 0.5f;
-                auto b1 = -d1_1_y*p_x + a1_1;
-                auto b2 = -d2_1_y*p_x + a2_1;
-                auto b3 = -d3_1_y*p_x + a3_1;
-                const bool inside = (b1>0 && b2>0 && b3>0) || (b1<0 && b2<0 && b3<0);
+            const __m256 a1 = _mm256_set1_ps(a1_1);
+            const __m256 a2 = _mm256_set1_ps(a2_1);
+            const __m256 a3 = _mm256_set1_ps(a3_1);
+
+            for (int x = minX; x < maxX; x += 8) {
+                //const auto p_x = x + 0.5f;
+                const __m256 p_x = _mm256_set_ps(
+                    x + 0.5f + 7.0f,
+                    x + 0.5f + 6.0f,
+                    x + 0.5f + 5.0f,
+                    x + 0.5f + 4.0f,
+                    x + 0.5f + 3.0f,
+                    x + 0.5f + 2.0f,
+                    x + 0.5f + 1.0f,
+                    x + 0.5f + 0.0f
+                );
+                //auto b1 = -d1_1_y*p_x + a1_1;
+                //auto b2 = -d2_1_y*p_x + a2_1;
+                //auto b3 = -d3_1_y*p_x + a3_1;
+                __m256 b1 = _mm256_fmadd_ps(d1, p_x, a1);
+                __m256 b2 = _mm256_fmadd_ps(d2, p_x, a2);
+                __m256 b3 = _mm256_fmadd_ps(d3, p_x, a3);
+                //const bool inside = (b1>0 && b2>0 && b3>0) || (b1<0 && b2<0 && b3<0);
+                const __m256 gt1 = _mm256_cmp_ps(b1, zero, _CMP_GT_OQ);
+                const __m256 gt2 = _mm256_cmp_ps(b2, zero, _CMP_GT_OQ);
+                const __m256 gt3 = _mm256_cmp_ps(b3, zero, _CMP_GT_OQ);
+                const __m256 lt1 = _mm256_cmp_ps(b1, zero, _CMP_LT_OQ);
+                const __m256 lt2 = _mm256_cmp_ps(b2, zero, _CMP_LT_OQ);
+                const __m256 lt3 = _mm256_cmp_ps(b3, zero, _CMP_LT_OQ);
+                const __m256 gt123 = _mm256_and_ps(_mm256_and_ps(gt1, gt2), gt3);
+                const __m256 lt123 = _mm256_and_ps(_mm256_and_ps(lt1, lt2), lt3);
+                const __m256 inside = _mm256_or_ps(gt123, lt123);
+                /*
                 if (!inside) {
                     continue;
                 }
+                */
+               const auto isNotInside = _mm256_testz_ps(inside, inside);
+               if (isNotInside) {
+                   continue;
+               }
 
-                b1 /= denom;
-                b2 /= denom;
-                b3 /= denom;
-                const auto p_ndc_z = b1 * p1_ndc.z + b2 * p2_ndc.z + b3 * p3_ndc.z;
+                //b1 /= denom;
+                //b2 /= denom;
+                //b3 /= denom;
+                b1 = _mm256_mul_ps(b1, denominv);
+                b2 = _mm256_mul_ps(b2, denominv);
+                b3 = _mm256_mul_ps(b3, denominv);
+                //const auto p_ndc_z = b1 * p1_ndc.z + b2 * p2_ndc.z + b3 * p3_ndc.z;
+                const __m256 p_ndc_z = _mm256_fmadd_ps(b1, p1_ndc_z, _mm256_fmadd_ps(b2, p2_ndc_z, _mm256_mul_ps(b3, p3_ndc_z)));
+                /*
                 if (fb.zbuf[y*fb.w + x] < p_ndc_z) {
                     continue;
                 } else {
                     fb.zbuf[y*fb.w + x] = p_ndc_z;
                 }
+                */
+                const __m256 depth = _mm256_loadu_ps(&fb.zbuf[y*fb.w + x]);
+                const __m256 depthGE = _mm256_cmp_ps(depth, p_ndc_z, _CMP_GE_OQ);
+                const auto isLT = _mm256_testz_ps(depthGE, depthGE);
+                if (isLT) {
+                    continue;
+                }
+                _mm256_storeu_ps(&fb.zbuf[y*fb.w + x],
+                    _mm256_or_ps(
+                        _mm256_and_ps(depthGE, p_ndc_z),
+                        _mm256_andnot_ps(depthGE, depth)
+                    )
+                );
 
-                const auto n = b1/v1.p.w * v1.n + b2/v2.p.w * v2.n + b3/v3.p.w * v3.n;
+                //const auto n = b1/v1.p.w * v1.n + b2/v2.p.w * v2.n + b3/v3.p.w * v3.n;
+                const __m256 n_x = _mm256_fmadd_ps(b1, v1_n_x, _mm256_fmadd_ps(b2, v2_n_x, _mm256_mul_ps(b3, v3_n_x)));
+                const __m256 n_y = _mm256_fmadd_ps(b1, v1_n_y, _mm256_fmadd_ps(b2, v2_n_y, _mm256_mul_ps(b3, v3_n_y)));
+                const __m256 n_z = _mm256_fmadd_ps(b1, v1_n_z, _mm256_fmadd_ps(b2, v2_n_z, _mm256_mul_ps(b3, v3_n_z)));
 
-                const auto c = glm::normalize(n);
-                fb.setPixel(x, y, c);
+                //const auto c = glm::normalize(n);
+                __m256 n = _mm256_fmadd_ps(n_x, n_x, _mm256_fmadd_ps(n_y, n_y, _mm256_mul_ps(n_z, n_z)));
+                n = _mm256_rsqrt_ps(n);
+                const __m256 c_r = _mm256_mul_ps(n_x, n);
+                const __m256 c_g = _mm256_mul_ps(n_y, n);
+                const __m256 c_b = _mm256_mul_ps(n_z, n);
+                //fb.setPixel(x, y, c);
+                // RGB 8bit * 8pix = 24bytes
+                // TODO: rounding (+0.5f)
+                __m256i r = _mm256_cvttps_epi32(_mm256_max_ps(_mm256_min_ps(_mm256_mul_ps(c_r, _255), _255), zero));
+                __m256i g = _mm256_cvttps_epi32(_mm256_max_ps(_mm256_min_ps(_mm256_mul_ps(c_g, _255), _255), zero));
+                __m256i b = _mm256_cvttps_epi32(_mm256_max_ps(_mm256_min_ps(_mm256_mul_ps(c_b, _255), _255), zero));
+
+                // AVX2
+                static const __m256i sh32to8R = _mm256_set_epi8(
+                    0x80, // A: clear
+                    0x80, // B: clear
+                    0x80, // G: clear
+                    12,   // R
+
+                    0x80, // A: clear
+                    0x80, // B: clear
+                    0x80, // G: clear
+                    8,    // R
+
+                    0x80, // A: clear
+                    0x80, // B: clear
+                    0x80, // G: clear
+                    4,    // R
+
+                    0x80, // A: clear
+                    0x80, // B: clear
+                    0x80, // G: clear
+                    0,    // R
+
+                    0x80, // A: clear
+                    0x80, // B: clear
+                    0x80, // G: clear
+                    12,   // R
+
+                    0x80, // A: clear
+                    0x80, // B: clear
+                    0x80, // G: clear
+                    8,    // R
+
+                    0x80, // A: clear
+                    0x80, // B: clear
+                    0x80, // G: clear
+                    4,    // R
+
+                    0x80, // A: clear
+                    0x80, // B: clear
+                    0x80, // G: clear
+                    0     // R
+                );
+                static const __m256i sh32to8G = _mm256_set_epi8(
+                    0x80, // A: clear
+                    0x80, // B: clear
+                    12,   // G
+                    0x80, // R: clear
+
+                    0x80, // A: clear
+                    0x80, // B: clear
+                    8,    // G
+                    0x80, // R: clear
+
+                    0x80, // A: clear
+                    0x80, // B: clear
+                    4,    // G
+                    0x80, // R: clear
+
+                    0x80, // A: clear
+                    0x80, // B: clear
+                    0,    // G
+                    0x80, // R: clear
+
+                    0x80, // A: clear
+                    0x80, // B: clear
+                    12,   // G
+                    0x80, // R: clear
+
+                    0x80, // A: clear
+                    0x80, // B: clear
+                    8,    // G
+                    0x80, // R: clear
+
+                    0x80, // A: clear
+                    0x80, // B: clear
+                    4,    // G
+                    0x80, // R: clear
+
+                    0x80, // A: clear
+                    0x80, // B: clear
+                    0,    // G
+                    0x80  // R: clear
+                );
+                static const __m256i sh32to8B = _mm256_set_epi8(
+                    0x80, // A: clear
+                    12,   // B
+                    0x80, // G: clear
+                    0x80, // R: clear
+
+                    0x80, // A: clear
+                    8,    // B
+                    0x80, // G: clear
+                    0x80, // R: clear
+
+                    0x80, // A: clear
+                    4,    // B
+                    0x80, // G: clear
+                    0x80, // R: clear
+
+                    0x80, // A: clear
+                    0,    // B
+                    0x80, // G: clear
+                    0x80, // R: clear
+
+                    0x80, // A: clear
+                    12,   // B
+                    0x80, // G: clear
+                    0x80, // R: clear
+
+                    0x80, // A: clear
+                    8,    // B
+                    0x80, // G: clear
+                    0x80, // R: clear
+
+                    0x80, // A: clear
+                    4,    // B
+                    0x80, // G: clear
+                    0x80, // R: clear
+
+                    0x80, // A: clear
+                    0,    // B
+                    0x80, // G: clear
+                    0x80  // R: clear
+                );
+                static const __m256i sh32to8A = _mm256_set_epi8(
+                    12,   // A
+                    0x80, // B: clear
+                    0x80, // G: clear
+                    0x80, // R: clear
+
+                    8,    // A
+                    0x80, // B: clear
+                    0x80, // G: clear
+                    0x80, // R: clear
+
+                    4,    // A
+                    0x80, // B: clear
+                    0x80, // G: clear
+                    0x80, // R: clear
+
+                    0,    // A
+                    0x80, // B: clear
+                    0x80, // G: clear
+                    0x80, // R: clear
+
+                    12,   // A
+                    0x80, // B: clear
+                    0x80, // G: clear
+                    0x80, // R: clear
+
+                    8,    // A
+                    0x80, // B: clear
+                    0x80, // G: clear
+                    0x80, // R: clear
+
+                    4,    // A
+                    0x80, // B: clear
+                    0x80, // G: clear
+                    0x80, // R: clear
+
+                    0,    // A
+                    0x80, // B: clear
+                    0x80, // G: clear
+                    0x80  // R: clear
+                );
+                const __m256i a = _mm256_and_si256(
+                    (const __m256i)inside,
+                    (const __m256i)depthGE
+                );
+                const __m256i rgba8 = _mm256_or_si256(
+                    _mm256_shuffle_epi8(r, sh32to8R),
+                    _mm256_or_si256(
+                        _mm256_shuffle_epi8(g, sh32to8G),
+                        _mm256_or_si256(
+                            _mm256_shuffle_epi8(b, sh32to8B),
+                            _mm256_shuffle_epi8(a, sh32to8A)
+                        )
+                    )
+                );
+                __m256i *pdst = (__m256i *)&fb.buf[fb.w*4*y + 4*(x + 0) + 0];
+                const __m256i orig8 = _mm256_loadu_si256(pdst);
+                _mm256_storeu_si256(pdst,
+                    _mm256_or_si256(
+                        _mm256_and_si256(a, rgba8),
+                        _mm256_andnot_si256(a, orig8)
+                    )
+                );
             }
-            #endif
         }
+        #endif
     };
 
     // Clip triangle
