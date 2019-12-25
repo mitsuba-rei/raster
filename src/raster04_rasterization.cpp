@@ -154,29 +154,81 @@ void rasterize(
             return;
         }
         #if 0
+        const float p1_ndc_z = p1_ndc.z;
+        const float p2_ndc_z = p2_ndc.z;
+        const float p3_ndc_z = p3_ndc.z;
+        const float denominv = 1.0f/denom;
+        const float v1_n_x = v1.n.x / v1.p.w;
+        const float v1_n_y = v1.n.y / v1.p.w;
+        const float v1_n_z = v1.n.z / v1.p.w;
+        const float v2_n_x = v2.n.x / v2.p.w;
+        const float v2_n_y = v2.n.y / v2.p.w;
+        const float v2_n_z = v2.n.z / v2.p.w;
+        const float v3_n_x = v3.n.x / v3.p.w;
+        const float v3_n_y = v3.n.y / v3.p.w;
+        const float v3_n_z = v3.n.z / v3.p.w;
+
+        const auto d1_1_x = p3.x - p2.x;
+        const auto d1_1_y = p3.y - p2.y;
+
+        const auto d2_1_x = p1.x - p3.x;
+        const auto d2_1_y = p1.y - p3.y;
+
+        const auto d3_1_x = p2.x - p1.x;
+        const auto d3_1_y = p2.y - p1.y;
+
+        const float d1 = -d1_1_y;
+        const float d2 = -d2_1_y;
+        const float d3 = -d3_1_y;
+
         for (int y = int(min.y); y <= int(max.y); y++) {
+            const auto p_y = y + 0.5f;
+
+            const auto d1_2_y = p_y - p2.y;
+            const auto a1_1 = d1_1_x*d1_2_y + d1_1_y*p2.x;
+
+            const auto d2_2_y = p_y - p3.y;
+            const auto a2_1 = d2_1_x*d2_2_y + d2_1_y*p3.x;
+
+            const auto d3_2_y = p_y - p1.y;
+            const auto a3_1 = d3_1_x*d3_2_y + d3_1_y*p1.x;
+
+            const float a1 = a1_1;
+            const float a2 = a2_1;
+            const float a3 = a3_1;
+
             for (int x = int(min.x); x <= int(max.x); x++) {
-                const auto p = glm::vec2(x, y) + 0.5f;
-                auto b1 = edgeFunc(p2, p3, p);
-                auto b2 = edgeFunc(p3, p1, p);
-                auto b3 = edgeFunc(p1, p2, p);
+                const auto p_x = x + 0.5f;
+                auto b1 = d1 * p_x + a1;
+                auto b2 = d2 * p_x + a2;
+                auto b3 = d3 * p_x + a3;
                 const bool inside = (b1>0 && b2>0 && b3>0) || (b1<0 && b2<0 && b3<0);
                 if (!inside) {
                     continue;
                 }
-                b1 /= denom;
-                b2 /= denom;
-                b3 /= denom;
-                const auto p_ndc = b1 * p1_ndc + b2 * p2_ndc + b3 * p3_ndc;
-                if (fb.zbuf[y*fb.w+x] < p_ndc.z) {
+                b1 *= denominv;
+                b2 *= denominv;
+                b3 *= denominv;
+                const auto p_ndc_z = b1 * p1_ndc_z + b2 * p2_ndc_z + b3 * p3_ndc_z;
+                const bool depthGE = (fb.zbuf[y*fb.w + x] >= p_ndc_z);
+                if (!inside || !depthGE) {
                     continue;
+                } else {
+                    fb.zbuf[y*fb.w + x] = p_ndc_z;
                 }
-                fb.zbuf[y*fb.w + x] = p_ndc.z;
-                const auto n = glm::normalize(b1/v1.p.w*v1.n + b2/v2.p.w*v2.n + b3/v3.p.w*v3.n);
-                fb.setPixel(x, y, fragmentShader(back ? -n : n, p_ndc));
+                const auto n_x = b1 * v1_n_x + b2 * v2_n_x + b3 * v3_n_x;
+                const auto n_y = b1 * v1_n_y + b2 * v2_n_y + b3 * v3_n_y;
+                const auto n_z = b1 * v1_n_z + b2 * v2_n_z + b3 * v3_n_z;
+                auto n = n_x*n_x + n_y*n_y + n_z*n_z;
+                n = 1.0f / sqrt(n);
+                const auto c = glm::abs(glm::vec3{n_x*n, n_y*n, n_z*n});
+                if (inside && depthGE) {
+                    fb.setPixel(x, y, c);
+                }
             }
         }
         #else
+        static const __m256 signmask = _mm256_set1_ps(-0.0f); // 0x80000000
         static const __m256 zero = _mm256_set1_ps(0.0f);
         static const __m256 _255 = _mm256_set1_ps(255.0f);
         const __m256 p1_ndc_z = _mm256_set1_ps(p1_ndc.z);
@@ -225,18 +277,18 @@ void rasterize(
             for (int x = minX; x < maxX; x += 8) {
                 //const auto p_x = x + 0.5f;
                 const __m256 p_x = _mm256_set_ps(
-                    x + 0.5f + 7.0f,
-                    x + 0.5f + 6.0f,
-                    x + 0.5f + 5.0f,
-                    x + 0.5f + 4.0f,
-                    x + 0.5f + 3.0f,
-                    x + 0.5f + 2.0f,
-                    x + 0.5f + 1.0f,
-                    x + 0.5f + 0.0f
+                    (x + 7) + 0.5f,
+                    (x + 6) + 0.5f,
+                    (x + 5) + 0.5f,
+                    (x + 4) + 0.5f,
+                    (x + 3) + 0.5f,
+                    (x + 2) + 0.5f,
+                    (x + 1) + 0.5f,
+                    (x + 0) + 0.5f
                 );
-                //auto b1 = -d1_1_y*p_x + a1_1;
-                //auto b2 = -d2_1_y*p_x + a2_1;
-                //auto b3 = -d3_1_y*p_x + a3_1;
+                //auto b1 = d1 * p_x + a1;
+                //auto b2 = d2 * p_x + a2;
+                //auto b3 = d3 * p_x + a3;
                 __m256 b1 = _mm256_fmadd_ps(d1, p_x, a1);
                 __m256 b2 = _mm256_fmadd_ps(d2, p_x, a2);
                 __m256 b3 = _mm256_fmadd_ps(d3, p_x, a3);
@@ -260,46 +312,52 @@ void rasterize(
                    continue;
                }
 
-                //b1 /= denom;
-                //b2 /= denom;
-                //b3 /= denom;
+                //b1 *= denominv;
+                //b2 *= denominv;
+                //b3 *= denominv;
                 b1 = _mm256_mul_ps(b1, denominv);
                 b2 = _mm256_mul_ps(b2, denominv);
                 b3 = _mm256_mul_ps(b3, denominv);
-                //const auto p_ndc_z = b1 * p1_ndc.z + b2 * p2_ndc.z + b3 * p3_ndc.z;
+                //const auto p_ndc_z = b1 * p1_ndc_z + b2 * p2_ndc_z + b3 * p3_ndc_z;
+                //const bool depthGE = (fb.zbuf[y*fb.w + x] >= p_ndc_z);
                 const __m256 p_ndc_z = _mm256_fmadd_ps(b1, p1_ndc_z, _mm256_fmadd_ps(b2, p2_ndc_z, _mm256_mul_ps(b3, p3_ndc_z)));
+                const __m256 depth = _mm256_loadu_ps(&fb.zbuf[y*fb.w + x]);
+                const __m256 depthGE = _mm256_cmp_ps(depth, p_ndc_z, _CMP_GE_OQ);
                 /*
-                if (fb.zbuf[y*fb.w + x] < p_ndc_z) {
+                if (!inside || !depthGE) {
                     continue;
                 } else {
                     fb.zbuf[y*fb.w + x] = p_ndc_z;
                 }
                 */
-                const __m256 depth = _mm256_loadu_ps(&fb.zbuf[y*fb.w + x]);
-                const __m256 depthGE = _mm256_cmp_ps(depth, p_ndc_z, _CMP_GE_OQ);
                 const auto isLT = _mm256_testz_ps(depthGE, depthGE);
                 if (isLT) {
                     continue;
                 }
+                const __m256 alpha = _mm256_and_ps(inside, depthGE);
                 _mm256_storeu_ps(&fb.zbuf[y*fb.w + x],
                     _mm256_or_ps(
-                        _mm256_and_ps(depthGE, p_ndc_z),
-                        _mm256_andnot_ps(depthGE, depth)
+                        _mm256_and_ps(alpha, p_ndc_z),
+                        _mm256_andnot_ps(alpha, depth)
                     )
                 );
 
-                //const auto n = b1/v1.p.w * v1.n + b2/v2.p.w * v2.n + b3/v3.p.w * v3.n;
+                //const auto n_x = b1 * v1_n_x + b2 * v2_n_x + b3 * v3_n_x;
+                //const auto n_y = b1 * v1_n_y + b2 * v2_n_y + b3 * v3_n_y;
+                //const auto n_z = b1 * v1_n_z + b2 * v2_n_z + b3 * v3_n_z;
                 const __m256 n_x = _mm256_fmadd_ps(b1, v1_n_x, _mm256_fmadd_ps(b2, v2_n_x, _mm256_mul_ps(b3, v3_n_x)));
                 const __m256 n_y = _mm256_fmadd_ps(b1, v1_n_y, _mm256_fmadd_ps(b2, v2_n_y, _mm256_mul_ps(b3, v3_n_y)));
                 const __m256 n_z = _mm256_fmadd_ps(b1, v1_n_z, _mm256_fmadd_ps(b2, v2_n_z, _mm256_mul_ps(b3, v3_n_z)));
 
-                //const auto c = glm::normalize(n);
+                //const auto c = glm::abs(glm::normalize(n));
                 __m256 n = _mm256_fmadd_ps(n_x, n_x, _mm256_fmadd_ps(n_y, n_y, _mm256_mul_ps(n_z, n_z)));
                 n = _mm256_rsqrt_ps(n);
-                const __m256 c_r = _mm256_mul_ps(n_x, n);
-                const __m256 c_g = _mm256_mul_ps(n_y, n);
-                const __m256 c_b = _mm256_mul_ps(n_z, n);
-                //fb.setPixel(x, y, c);
+                const __m256 c_r = _mm256_andnot_ps(signmask, _mm256_mul_ps(n_x, n));
+                const __m256 c_g = _mm256_andnot_ps(signmask, _mm256_mul_ps(n_y, n));
+                const __m256 c_b = _mm256_andnot_ps(signmask, _mm256_mul_ps(n_z, n));
+                //if (inside && depthGE) {
+                //    fb.setPixel(x, y, c);
+                //}
                 // RGB 8bit * 8pix = 24bytes
                 // TODO: rounding (+0.5f)
                 __m256i r = _mm256_cvttps_epi32(_mm256_max_ps(_mm256_min_ps(_mm256_mul_ps(c_r, _255), _255), zero));
@@ -471,17 +529,13 @@ void rasterize(
                     0x80, // G: clear
                     0x80  // R: clear
                 );
-                const __m256i a = _mm256_and_si256(
-                    (const __m256i)inside,
-                    (const __m256i)depthGE
-                );
                 const __m256i rgba8 = _mm256_or_si256(
                     _mm256_shuffle_epi8(r, sh32to8R),
                     _mm256_or_si256(
                         _mm256_shuffle_epi8(g, sh32to8G),
                         _mm256_or_si256(
                             _mm256_shuffle_epi8(b, sh32to8B),
-                            _mm256_shuffle_epi8(a, sh32to8A)
+                            _mm256_shuffle_epi8((__m256i)alpha, sh32to8A)
                         )
                     )
                 );
@@ -489,8 +543,8 @@ void rasterize(
                 const __m256i orig8 = _mm256_loadu_si256(pdst);
                 _mm256_storeu_si256(pdst,
                     _mm256_or_si256(
-                        _mm256_and_si256(a, rgba8),
-                        _mm256_andnot_si256(a, orig8)
+                        _mm256_and_si256((__m256i)alpha, rgba8),
+                        _mm256_andnot_si256((__m256i)alpha, orig8)
                     )
                 );
             }
