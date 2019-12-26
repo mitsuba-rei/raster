@@ -4,27 +4,53 @@
 constexpr float Inf = 1e+8f;
 constexpr float Eps = 1e-4f;
 
+#pragma GCC target("avx")
+#pragma clang attribute push (__attribute__((target("avx"))), apply_to=function)
+#include <x86intrin.h>
+static inline void clear(unsigned char *buf, float *zbuf, size_t count);
+#pragma clang attribute pop
+
+static inline void clear(unsigned char *buf, float *zbuf, const size_t count) {
+    static const __m256 zero = _mm256_set1_ps(0);
+    static const __m256 inf = _mm256_set1_ps(Inf);
+    float *pb = (float *)buf;
+    for (size_t i = 0; i < count; i += 8) {
+        _mm256_store_ps(pb + i, zero);
+        _mm256_store_ps(zbuf + i, inf);
+    }
+}
+
 struct Framebuffer {
     int w = 0;
     int h = 0;
-    unsigned char *buf;     // Color buffer
-    float *zbuf;            // Depth buffer
+
+    uintptr_t buforg = 0;  // Color buffer
+    uintptr_t zbuforg = 0; // Depth buffer
+
+    unsigned char *buf = nullptr;     // Color buffer (aligned)
+    float *zbuf = nullptr;            // Depth buffer (aligned)
 
     void clear(int w_, int h_) {
         if (w != w_ || h != h_) {
             w = w_;
             h = h_;
-            ::free(buf);
-            ::free(zbuf);
-            buf = (unsigned char *)::malloc(w * h * 4);
-            zbuf = (float *)::malloc(w * h * 4);
+            ::free((void *)buforg);
+            ::free((void *)zbuforg);
+            buforg = (uintptr_t)::malloc(w*h * 4 + 31);
+            zbuforg = (uintptr_t)::malloc(w*h * 4 + 31);
+            buf = (unsigned char *)((buforg + 31) & ~31ULL);
+            zbuf = (float *)((zbuforg + 31) & ~31ULL);
         }
-        ::memset(buf, 0, w * h * 4);
-        for (int y = 0; y < h; y++) {
-            for (int x = 0; x < w; x++) {
-                zbuf[w * y + x] = Inf;
-            }
+#if 0
+        ::memset(buf, 0, w*h * 4);
+        //zbuf.assign(w*h, Inf);
+        float *p = zbuf;
+        for (size_t i = 0; i < w*h; i++) {
+            *p++ = Inf;
         }
+#else
+        ::clear(buf, zbuf, w*h);
+#endif
     }
 
     void setPixel(int x, int y, const glm::vec3& c) {
@@ -321,7 +347,7 @@ void rasterize(
                 //const auto p_ndc_z = b1 * p1_ndc_z + b2 * p2_ndc_z + b3 * p3_ndc_z;
                 //const bool depthGE = (fb.zbuf[y*fb.w + x] >= p_ndc_z);
                 const __m256 p_ndc_z = _mm256_fmadd_ps(b1, p1_ndc_z, _mm256_fmadd_ps(b2, p2_ndc_z, _mm256_mul_ps(b3, p3_ndc_z)));
-                const __m256 depth = _mm256_loadu_ps(&fb.zbuf[y*fb.w + x]);
+                const __m256 depth = _mm256_load_ps(&fb.zbuf[y*fb.w + x]);
                 const __m256 depthGE = _mm256_cmp_ps(depth, p_ndc_z, _CMP_GE_OQ);
                 /*
                 if (!inside || !depthGE) {
@@ -335,7 +361,7 @@ void rasterize(
                     continue;
                 }
                 const __m256 alpha = _mm256_and_ps(inside, depthGE);
-                _mm256_storeu_ps(&fb.zbuf[y*fb.w + x],
+                _mm256_store_ps(&fb.zbuf[y*fb.w + x],
                     _mm256_or_ps(
                         _mm256_and_ps(alpha, p_ndc_z),
                         _mm256_andnot_ps(alpha, depth)
@@ -540,8 +566,8 @@ void rasterize(
                     )
                 );
                 __m256i *pdst = (__m256i *)&fb.buf[fb.w*4*y + 4*(x + 0) + 0];
-                const __m256i orig8 = _mm256_loadu_si256(pdst);
-                _mm256_storeu_si256(pdst,
+                const __m256i orig8 = _mm256_load_si256(pdst);
+                _mm256_store_si256(pdst,
                     _mm256_or_si256(
                         _mm256_and_si256((__m256i)alpha, rgba8),
                         _mm256_andnot_si256((__m256i)alpha, orig8)
