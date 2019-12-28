@@ -1,4 +1,6 @@
-cmake_minimum_required(VERSION 3.11)
+cmake_minimum_required(VERSION 3.10)
+set(CMAKE_TOOLCHAIN_FILE "${CMAKE_SOURCE_DIR}/glfw/CMake/x86_64-w64-mingw32.cmake")
+set(CMAKE_EXE_LINKER_FLAGS "-static-libgcc -static-libstdc++")
 project(raster)
 
 # --------------------------------------------------------------------------------
@@ -30,6 +32,7 @@ add_library(libraster STATIC
     "${_IMGUI_DIR}/imgui.cpp"
     "${_IMGUI_DIR}/imgui_draw.cpp"
     "${_IMGUI_DIR}/imgui_demo.cpp"
+    "${_IMGUI_DIR}/imgui_widgets.cpp"
     "${_IMGUI_DIR}/examples/imgui_impl_glfw.cpp"
     "${_IMGUI_DIR}/examples/imgui_impl_opengl3.cpp"
     "${_IMGUI_DIR}/examples/libs/gl3w/GL/gl3w.c")

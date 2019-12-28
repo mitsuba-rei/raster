@@ -34,8 +34,10 @@ struct Scene {
     std::vector<tinyobj::material_t> materials;
 
     bool load(const std::string& path) {
+        std::string warn;
         std::string err;
-        if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &err, path.c_str())) {
+        if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &err, &warn, path.c_str())) {
+            std::cerr << warn << std::endl;
             std::cerr << err << std::endl;
             return false;
         }
