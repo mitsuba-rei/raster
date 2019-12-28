@@ -263,6 +263,21 @@ int main(int argc, char* argv[]) {
             Normal,
             Wireframe,
         };
+#if 1
+        const static auto mode = RasterMode::Normal;
+        const static bool animate = true;
+        const static bool cullbackface = true;
+        const static float fov = 30.f;
+        const static float znear = 0.1f;
+        const static float zfar = 10.f;
+        const static auto view = glm::lookAt(
+            glm::vec3(0, 0.8, 1.5), // eye
+            glm::vec3(0, 0, 0),     // center
+            glm::vec3(0, 1, 0));    // up
+
+        auto *pview = const_cast<glm::mat4 *>(&viewM);
+        *pview = view;
+#else
         const auto mode = [&]() {
             static int mode = 0;
             ImGui::RadioButton("Shaded", &mode, 0); ImGui::SameLine();
@@ -290,6 +305,7 @@ int main(int argc, char* argv[]) {
         ImGui::DragFloat("near", &znear, 0.01f, 0.01f, 10.f);
         ImGui::DragFloat("far", &zfar, 0.01f, 1.f, 1000.f);
         ImGui::Separator();
+#endif
 
         // Framebuffer
         static Framebuffer fb;
