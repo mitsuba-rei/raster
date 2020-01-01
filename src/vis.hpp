@@ -218,7 +218,7 @@ public:
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, 1, 1, 0, GL_RGB, GL_UNSIGNED_BYTE, nullptr);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
         glBindTexture(GL_TEXTURE_2D, 0);
         #pragma endregion
 
@@ -246,11 +246,11 @@ public:
         glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &h_);
         if (w != w_ || h != h_) {
             // Change of the texture is detected, reallocate
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, w, h, 0, GL_RGB, GL_UNSIGNED_BYTE, data);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
             #if IMAGE_VISUALIZER_USE_PBO
             for (int i = 0; i < NumPBOs; i++) {
                 glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbo_[i]);
-                glBufferData(GL_PIXEL_UNPACK_BUFFER, w*h*3, data, GL_STREAM_DRAW);
+                glBufferData(GL_PIXEL_UNPACK_BUFFER, w*h*4, data, GL_STREAM_DRAW);
             }
             glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
             #endif
@@ -259,14 +259,14 @@ public:
             // Update the texture
             #if IMAGE_VISUALIZER_USE_PBO
             glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbo_[currPboIndex_]);
-            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, GL_RGB, GL_UNSIGNED_BYTE, 0);
+            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, 0);
             const int nextPboIndex = (currPboIndex_ + 1) % NumPBOs;
             glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbo_[nextPboIndex]);
-            glBufferSubData(GL_PIXEL_UNPACK_BUFFER, 0, w*h*3, data);
+            glBufferSubData(GL_PIXEL_UNPACK_BUFFER, 0, w*h*4, data);
             glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
             currPboIndex_ = nextPboIndex;
             #else
-            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, GL_RGB, GL_UNSIGNED_BYTE, data);
+            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, data);
             #endif
         }
         glBindTexture(GL_TEXTURE_2D, 0);
