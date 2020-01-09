@@ -36,7 +36,7 @@ struct Scene {
     bool load(const std::string& path) {
         std::string warn;
         std::string err;
-        if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &err, &warn, path.c_str())) {
+        if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, path.c_str())) {
             std::cerr << warn << std::endl;
             std::cerr << err << std::endl;
             return false;
@@ -89,10 +89,33 @@ private:
     GLuint pbo_[NumPBOs];
     int currPboIndex_ = 0;
     #endif
-    
+
 public:
     bool init() {
         #pragma region Programs
+        #ifdef __APPLE__
+        const char* vscode = R"x(
+            #version 410 core
+            layout (location = 0) in vec2 position;
+            out gl_PerVertex {
+                vec4 gl_Position;
+            };
+            out vec2 uv;
+            void main() {
+                uv = (position + 1) * .5;
+                gl_Position = vec4(position, 0, 1);
+            }
+        )x";
+        const char* fscode = R"x(
+            #version 410 core
+            /*layout (binding = 0)*/ uniform sampler2D tex;
+            in vec2 uv;
+            out vec4 color;
+            void main() {
+                color = texture(tex, uv);
+            }
+        )x";
+        #else
         const char* vscode = R"x(
             #version 430 core
             layout (location = 0) in vec2 position;
@@ -114,6 +137,7 @@ public:
                 color = texture(tex, uv);
             }
         )x";
+        #endif
         const auto createProgram = [](GLenum shaderType, const std::string& code) -> std::optional<GLuint> {
             GLuint program = glCreateProgram();
             GLuint shader = glCreateShader(shaderType);
@@ -197,7 +221,7 @@ public:
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, 1, 1, 0, GL_RGB, GL_UNSIGNED_BYTE, nullptr);
         glBindTexture(GL_TEXTURE_2D, 0);
         #pragma endregion
-        
+
         // --------------------------------------------------------------------------------
 
         #if IMAGE_VISUALIZER_USE_PBO
@@ -280,7 +304,11 @@ public:
         window_ = [&]() -> GLFWwindow* {
             // GLFW window
             glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
+            #ifdef __APPLE__
+            glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 1);
+            #else
             glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+            #endif
             glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
             #ifdef _DEBUG
             glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, GLFW_TRUE);
@@ -294,7 +322,11 @@ public:
             IMGUI_CHECKVERSION();
             ImGui::CreateContext();
             ImGui_ImplGlfw_InitForOpenGL(window, true);
+            #ifdef __APPLE__
+            ImGui_ImplOpenGL3_Init("#version 410 core");
+            #else
             ImGui_ImplOpenGL3_Init();
+            #endif
             ImGui::StyleColorsDark();
             return window;
         }();
@@ -380,7 +412,7 @@ public:
                         sin(glm::radians(pitch)),
                         cos(glm::radians(pitch)) * sin(glm::radians(yaw)));
                 }();
-                
+
                 // Camera position
                 const auto p = [&]() -> glm::vec3 {
                     static auto p = init_eye;
