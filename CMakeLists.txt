@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.10)
+
+# patch for WSL mingw32
 set(CMAKE_TOOLCHAIN_FILE "${CMAKE_SOURCE_DIR}/glfw/CMake/x86_64-w64-mingw32.cmake")
-set(CMAKE_EXE_LINKER_FLAGS "-static-libgcc -static-libstdc++")
+
 project(raster)
 
 # --------------------------------------------------------------------------------
@@ -57,3 +59,8 @@ add_executable(raster04_rasterization "${CMAKE_SOURCE_DIR}/src/raster04_rasteriz
 target_link_libraries(raster04_rasterization PRIVATE libraster)
 add_executable(raster05_shadow "${CMAKE_SOURCE_DIR}/src/raster05_shadow.cpp")
 target_link_libraries(raster05_shadow PRIVATE libraster)
+
+
+# patch for WSL mingw32
+set(CMAKE_EXE_LINKER_FLAGS "-static-libgcc -static-libstdc++")
+set(CMAKE_BUILD_TYPE "Release")
