@@ -7,21 +7,33 @@ constexpr float Eps = 1e-4f;
 struct Framebuffer {
     int w = 0;
     int h = 0;
-    std::vector<unsigned char> buf;     // Color buffer
-    std::vector<float> zbuf;            // Depth buffer
+    unsigned char *buf;     // Color buffer
+    float *zbuf;            // Depth buffer
 
     void clear(int w_, int h_) {
-        if (w != w_ || h != h_) { w = w_; h = h_; }
-        buf.assign(w*h * 3, 0);
-        zbuf.assign(w*h * 3, Inf);
+        if (w != w_ || h != h_) {
+            w = w_;
+            h = h_;
+            ::free(buf);
+            ::free(zbuf);
+            buf = (unsigned char *)::malloc(w * h * 4);
+            zbuf = (float *)::malloc(w * h * 4);
+        }
+        ::memset(buf, 0, w * h * 4);
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                zbuf[w * y + x] = Inf;
+            }
+        }
     }
 
     void setPixel(int x, int y, const glm::vec3& c) {
         if (x < 0 || w <= x || y < 0 || h <= y) { return; }
-        const int i = 3 * (y*w + x);
-        buf[i]     = glm::clamp(int(c.r * 255), 0, 255);
+        const size_t i = (w * y + x) * 4;
+        buf[i + 0] = glm::clamp(int(c.r * 255), 0, 255);
         buf[i + 1] = glm::clamp(int(c.g * 255), 0, 255);
         buf[i + 2] = glm::clamp(int(c.b * 255), 0, 255);
+        buf[i + 3] = 255;
     };
 };
 
@@ -263,6 +275,21 @@ int main(int argc, char* argv[]) {
             Normal,
             Wireframe,
         };
+#if 1
+        const static auto mode = RasterMode::Normal;
+        const static bool animate = true;
+        const static bool cullbackface = true;
+        const static float fov = 30.f;
+        const static float znear = 0.1f;
+        const static float zfar = 10.f;
+        const static auto view = glm::lookAt(
+            glm::vec3(0, 0.8, 1.5), // eye
+            glm::vec3(0, 0, 0),     // center
+            glm::vec3(0, 1, 0));    // up
+
+        auto *pview = const_cast<glm::mat4 *>(&viewM);
+        *pview = view;
+#else
         const auto mode = [&]() {
             static int mode = 0;
             ImGui::RadioButton("Shaded", &mode, 0); ImGui::SameLine();
@@ -290,6 +317,7 @@ int main(int argc, char* argv[]) {
         ImGui::DragFloat("near", &znear, 0.01f, 0.01f, 10.f);
         ImGui::DragFloat("far", &zfar, 0.01f, 1.f, 1000.f);
         ImGui::Separator();
+#endif
 
         // Framebuffer
         static Framebuffer fb;
@@ -322,7 +350,7 @@ int main(int argc, char* argv[]) {
                 return {};
             });
 
-        return { fb.w, fb.h, fb.buf.data() };
+        return { fb.w, fb.h, fb.buf };
     });
     app.shutdown();
 
